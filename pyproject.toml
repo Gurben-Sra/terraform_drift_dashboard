@@ -14,6 +14,10 @@ dependencies = [
 
 [project.scripts]
 terraform-drift-dashboard = "terraform_drift_dashboard.cli:main"
+terraform-drift-dashboard-web = "terraform_drift_dashboard.web:main"
 
 [tool.setuptools.packages.find]
-include = ["terraform_drift_dashboard*"]
+include = ["demo", "terraform_drift_dashboard*"]
+
+[tool.setuptools.package-data]
+demo = ["index.html"]

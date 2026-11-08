@@ -9,3 +9,6 @@ short-lived AWS credentials with only the permissions the checker needs.
 
 The tool is designed to make read-only AWS API calls. It does not apply
 Terraform changes or modify AWS resources.
+
+The optional dashboard server binds to `127.0.0.1` only and accepts scan
+requests from the same local origin. Do not proxy it to a public interface.

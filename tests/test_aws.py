@@ -19,6 +19,29 @@ class FakeEc2Client:
         return {"Reservations": [{"Instances": found}]}
 
 
+class FakeClientError(Exception):
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.response = {"Error": {"Code": code}}
+
+
+class MissingIdEc2Client(FakeEc2Client):
+    def describe_instances(self, InstanceIds: list[str]) -> dict:
+        self.requested_ids.extend(InstanceIds)
+        if "i-missing" in InstanceIds:
+            raise FakeClientError("InvalidInstanceID.NotFound")
+        return {
+            "Reservations": [
+                {
+                    "Instances": [
+                        {"InstanceId": instance_id, "InstanceType": self.instances[instance_id]}
+                        for instance_id in InstanceIds
+                    ]
+                }
+            ]
+        }
+
+
 class Ec2InspectorTests(unittest.TestCase):
     def test_reports_in_sync_drifted_and_missing_instances(self) -> None:
         client = FakeEc2Client({"i-sync": "t3.medium", "i-drift": "t3.large"})
@@ -52,6 +75,21 @@ class Ec2InspectorTests(unittest.TestCase):
 
         self.assertEqual(Ec2Inspector(client=client).inspect([]), [])
         self.assertEqual(client.requested_ids, [])
+
+    def test_retries_individually_when_aws_batch_contains_a_missing_id(self) -> None:
+        client = MissingIdEc2Client({"i-sync": "t3.medium"})
+        inspector = Ec2Inspector(client=client)
+        inspector._sdk_errors = (FakeClientError,)
+        inspector._client_error = FakeClientError
+        expectations = [
+            InstanceExpectation("aws_instance.sync", "i-sync", "t3.medium"),
+            InstanceExpectation("aws_instance.missing", "i-missing", "t3.small"),
+        ]
+
+        results = inspector.inspect(expectations)
+
+        self.assertEqual([result.status for result in results], ["IN_SYNC", "MISSING"])
+        self.assertEqual(client.requested_ids, ["i-sync", "i-missing", "i-sync", "i-missing"])
 
 
 if __name__ == "__main__":

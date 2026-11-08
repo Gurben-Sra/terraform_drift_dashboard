@@ -29,6 +29,28 @@ tickets. A `MISSING` result means the instance ID was not returned in the
 selected AWS account and region; verify both before concluding the instance was
 deleted.
 
+## Dashboard preview
+
+Install the project, configure AWS credentials, and start the local dashboard
+from the Terraform working directory:
+
+```bash
+python -m pip install -e .
+terraform state pull > terraform.tfstate
+terraform-drift-dashboard-web --state terraform.tfstate --region us-east-1
+```
+
+Open `http://127.0.0.1:8765/` and select **Run scan**. The app binds to
+loopback only and uses the AWS profile or credentials configured for its
+process. It does not write state or change AWS resources. State files are
+sensitive; do not serve the dashboard on a public interface or commit state
+files.
+
+To preview the interface without starting a scan server, open
+[`demo/index.html`](demo/index.html) in a browser. That static preview uses
+fictional sample data. The live dashboard currently supports EC2 instance types
+only; the trend chart is illustrative and scan history is not persisted.
+
 ## Requirements
 
 - Python 3.10 or newer
@@ -100,6 +122,6 @@ Tests use a fake EC2 client and do not require AWS credentials or network access
 
 ## Project status
 
-This is an early MVP, not a continuously running dashboard. It reads a state
-snapshot on demand. Future work could add more resource types, scheduled checks,
-and optional issue or notification integrations.
+The local dashboard runs scans on demand from a Terraform state snapshot.
+Future work could add more resource types, persisted scan history, scheduled
+checks, and optional issue or notification integrations.

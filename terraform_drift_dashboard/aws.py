@@ -20,10 +20,17 @@ class Ec2Inspector:
         client: Any | None = None,
     ) -> None:
         if client is None:
-            import boto3
-            from botocore.exceptions import BotoCoreError, ClientError
+            try:
+                import boto3
+                from botocore.exceptions import BotoCoreError, ClientError
+            except ImportError as error:
+                raise AwsLookupError(
+                    "boto3 is required for AWS scans. Install the project dependencies with "
+                    "'python -m pip install -e .'."
+                ) from error
 
             self._sdk_errors: tuple[type[BaseException], ...] = (BotoCoreError, ClientError)
+            self._client_error = ClientError
             try:
                 session = boto3.Session(profile_name=profile, region_name=region)
                 client = session.client("ec2")
@@ -31,16 +38,27 @@ class Ec2Inspector:
                 raise AwsLookupError(f"Unable to create AWS EC2 client: {error}") from error
         else:
             self._sdk_errors = ()
+            self._client_error = None
         self._client = client
 
     def _fetch_instance_types(self, instance_ids: list[str]) -> dict[str, str]:
         instance_types: dict[str, str] = {}
-        for offset in range(0, len(instance_ids), 1000):
-            batch = instance_ids[offset : offset + 1000]
+
+        def fetch_batch(batch: list[str]) -> None:
             try:
                 response = self._client.describe_instances(InstanceIds=batch)
             except self._sdk_errors as error:
-                raise AwsLookupError(f"AWS DescribeInstances failed: {error}") from error
+                if not (
+                    self._client_error is not None
+                    and isinstance(error, self._client_error)
+                    and error.response.get("Error", {}).get("Code")
+                    == "InvalidInstanceID.NotFound"
+                ):
+                    raise AwsLookupError(f"AWS DescribeInstances failed: {error}") from error
+                if len(batch) > 1:
+                    for instance_id in batch:
+                        fetch_batch([instance_id])
+                return
 
             reservations = response.get("Reservations")
             if not isinstance(reservations, list):
@@ -60,6 +78,10 @@ class Ec2Inspector:
                             "AWS DescribeInstances returned an instance without its ID or type."
                         )
                     instance_types[instance_id] = instance_type
+
+        for offset in range(0, len(instance_ids), 1000):
+            batch = instance_ids[offset : offset + 1000]
+            fetch_batch(batch)
         return instance_types
 
     def inspect(self, expectations: Iterable[InstanceExpectation]) -> list[DriftResult]:
